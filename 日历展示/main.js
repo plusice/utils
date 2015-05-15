@@ -1,15 +1,15 @@
-// 日历
 var calendarViewBuilder = {
 	buildMonth:function(opt){
 		var sDate = opt.sDate,
 			eDate = opt.eDate,
 			curDate = sDate
 		// 显示的天数
-		var dayNum = eDate.getDate()-sDate.getDate()+1
+		var dayNum = eDate.getDate() - sDate.getDate() + 1
 		var curDateNum = sDate.getDate()
 		// startCol日期开始的列（星期几），startRow日期开始的行，endRow根据显示的天数进行计算
+		// 这里不显示整个月份，所以row直接从0开始，endRow也是根据显示的天数进行计算
 		var startCol = sDate.getDay(),
-			startRow = Math.floor(sDate.getDate()/7)
+			startRow = 0
 		var endCol = eDate.getDay(),
 			endRow = Math.ceil((dayNum+startCol)/7)-1
 
@@ -58,7 +58,7 @@ var calendarViewBuilder = {
 				})
 			)
 			// 最终cur_eDate会等于eDate
-			if(eDate==cur_eDate){
+			if(eDate.getTime()==cur_eDate.getTime()){
 				break
 			}
 			cur_sDate = getFirstDateOfNext(cur_sDate)
