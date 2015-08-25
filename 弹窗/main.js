@@ -1,5 +1,5 @@
 // 弹窗
-function YcfDialog(config){
+function JBDialog(config){
 	// 渲染dialog的content，并添加类名
 	this.$dialog = $(this.template(this.dialogHtml,config))
 	this.$mask = $(this.maskHtml)
@@ -7,8 +7,8 @@ function YcfDialog(config){
 	this.$mask.appendTo($('body'))
 	this.init(config)
 }
-YcfDialog.prototype = {
-	constructor:YcfDialog,
+JBDialog.prototype = {
+	constructor:JBDialog,
 	dialogHtml:'<div class="dialogWpr {{className}}" style="display:none">'
 		            +'<div class="flexbox-center">'
 		                +'<div class="dialogBox">'
