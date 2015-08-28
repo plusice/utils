@@ -1,0 +1,156 @@
+<?xml version="1.0"?>
+    <!-- @author: chenjiabin@youmi.net -->
+    <!--
+require
+npm install -g ng-annotate ng-html2js
+-->
+
+<project name="minify-static-file" default="all">
+
+    <description>Minify Static Files</description>
+    <dirname property="current.dir" file="${ant.file}" />
+    <property name="webroot.dir" location="${current.dir}" />
+    <property name="html.dir" location="${webroot.dir}/views" />
+    <property name="tmp.dir" location="${current.dir}/tmp" />
+    <property name="js.dir" location="${webroot.dir}/js" />
+    <property name="googleclosure.path" location="${current.dir}/tools/googleclosure.jar" />
+    <property name="htmlcompressor.path" location="${current.dir}/tools/htmlcompressor-1.5.3.jar" />
+
+    <taskdef resource="net/sf/antcontrib/antlib.xml">
+        <classpath>
+            <pathelement location="${current.dir}/tools/ant-contrib-1.0b5-SNAPSHOT.jar"/>
+        </classpath>
+    </taskdef>
+
+    <target name="all" depends="css,js,html,clean" />
+    <target name="js" depends="concat-js"/>
+    <target name="html" depends=""/>
+
+    <!-- sass to css -->
+    <target name="css" description="编译sass">
+        <echo message="编译sass..." />
+        <exec executable="compass" dir="${webroot.dir}">
+            <arg value="compile" />
+        </exec>
+    </target>
+
+    <!-- haml to html -->
+    <target name="haml2html">
+        <echo message="编译haml..." />
+        <apply executable="haml" verbose="true" failonerror="true" parallel="false">
+            <!-- mapper的输入不包括fileset的dir,所以不要把views/写在dir中,这样mapper的输出就不用写views/了 -->
+            <fileset dir="${webroot.dir}" includes="views/**/*.haml" />
+            <srcfile/>
+            <targetfile/>
+            <mapper type="glob" from="*.haml" to="*.html" />
+        </apply>
+    </target>
+
+    <!-- concat javascript file according to the script tag in index.html -->
+    <target name="concat-js" depends="haml2html">
+        <!--
+            html写法:
+            \<!\-\- build:xxx.js \-\-\>
+            <script src="a.js"></script>
+            <script src="b.js"></script>
+            \<!\-\- xxx.js:build \-\-\>
+         -->
+        <!-- 提取所有script标签的url,和含有build:xxx或xxx:build的注释里面的内容 -->
+        <loadfile srcFile="${html.dir}/index.html" property="js.concat.alllist">
+            <filterchain>
+                <linecontainsregexp>
+                    <regexp pattern="(&lt;script.*src[^&gt;]*&gt;)|(&lt;\!\-\-[\s]*build:[^&gt;]*\-\-&gt;)|(&lt;\!\-\-[\s]*[\S]+:build[^&gt;]*\-\-&gt;)" />
+                </linecontainsregexp>
+                <tokenfilter>
+                    <replaceregex pattern=".*&lt;script.*src=[&quot;']?([^&gt;&quot;']*).*&gt;[^&lt;]*" replace="\1" flags="gi" />
+                    <replaceregex pattern=".*&lt;\!\-\-[\s]*build:([\S]+)[^&gt;]*\-\-&gt;" replace="\1build:" flags="gi" />
+                    <replaceregex pattern=".*&lt;\!\-\-[\s]*([\S]+):build[^&gt;]*\-\-&gt;" replace="\1:build" flags="gi" />
+                </tokenfilter>
+                <prefixlines prefix="${webroot.dir}/"/>
+                <suffixlines suffix="," />
+                <striplinebreaks/>
+            </filterchain>
+        </loadfile>
+        <!-- 提取注释build:xxx里要进行合并的javascript目标url(没法使用replace从js.concat.alllist过滤build:字符,只能再新建一个列表) -->
+        <loadfile srcFile="${html.dir}/index.html" property="js.concat.destlist">
+            <filterchain>
+                <linecontainsregexp>
+                    <regexp pattern="&lt;\!\-\-[\s]*build:[^&gt;]*\-\-&gt;" />
+                </linecontainsregexp>
+                <tokenfilter>
+                    <replaceregex pattern=".*&lt;\!\-\-[\s]*build:([\S]+)[^&gt;]*\-\-&gt;" replace="\1" flags="gi" />
+                </tokenfilter>
+                <suffixlines suffix="," />
+                <striplinebreaks/>
+            </filterchain>
+        </loadfile>
+        <!-- 要进行合并的脚本list -->
+        <var name="js.concat.src" value=""/>
+        <!-- 遍历所有script标签的url和build标签,将build:和:build之间的url进行合并,并重写html的script标签 -->
+        <for list="${js.concat.alllist}" param="item">
+            <sequential>
+                <if>
+                <!-- 包含build:或者:build -->
+                <contains string="@{item}" substring="build" />
+                <then>
+                    <if>
+                    <!-- build:后面元素需要进行合并 -->
+                    <contains string="@{item}" substring="build:" />
+                    <then>
+                        <var name="js.concat.need" value="true" />
+                        <!-- 设置当前要合并的目标文件 -->
+                        <var name="js.concat.dest" value="@{item}"/>
+                    </then>
+                    <else>
+                        <!-- :build后面元素不需进行合并 -->
+                        <var name="js.concat.need" value="false" />
+
+                        <!-- 对js.concat.src进行合并 -->
+                        <for list="${js.concat.destlist}" param="desturl">
+                            <sequential>
+                                <if>
+                                    <contains string="${js.concat.dest}" substring="@{desturl}" />
+                                    <then>
+                                        <concat destfile="${webroot.dir}/@{desturl}">
+                                            <filelist files="${js.concat.src}"/>
+                                        </concat>
+                                        <!-- 输出合并目标文件 -->
+                                        <echo message="${webroot.dir}/@{desturl}" />
+
+                                        <!-- 重写html的script标签 -->
+                                        <replaceregexp
+                                        match="&lt;!--[\s]*build:@{desturl} [\d\w\s\W]*&lt;script.*src=['&quot;]?(.*)['&quot;]?\s*&gt;\s*&lt;/script&gt;[\d\w\s\W]*&lt;!--[\s]*@{desturl}:build[\s]*--&gt;"
+                                        replace="&lt;script src=&quot;${webroot.dir}/@{desturl}&quot;&gt;&lt;/script&gt;"
+                                        flags="gs">
+                                            <fileset dir="${html.dir}" includes="index.html" />
+                                        </replaceregexp>
+
+                                    </then>
+                                </if>
+                            </sequential>
+                        </for>
+
+                        <!-- 清空js.concat.src -->
+                        <var name="js.concat.src" value=""/>
+                    </else>
+                    </if>
+                </then>
+                <else>
+                    <if>
+                    <!-- 需要合并的脚本push进js.concat.src -->
+                    <equals arg1="${js.concat.need}" arg2="true" />
+                    <then>
+                        <var name="js.concat.src" value="${js.concat.src}@{item},"/>
+                    </then>
+                    </if>
+                </else>
+                </if>
+            </sequential>
+        </for>
+    </target>
+
+    <target name="clean">
+    </target>
+</project>
+
+
