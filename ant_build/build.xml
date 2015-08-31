@@ -1,9 +1,4 @@
 <?xml version="1.0"?>
-    <!-- @author: chenjiabin@youmi.net -->
-    <!--
-require
-npm install -g ng-annotate ng-html2js
--->
 
 <project name="minify-static-file" default="all">
 
@@ -16,6 +11,7 @@ npm install -g ng-annotate ng-html2js
     <property name="googleclosure.path" location="${current.dir}/tools/googleclosure.jar" />
     <property name="htmlcompressor.path" location="${current.dir}/tools/htmlcompressor-1.5.3.jar" />
 
+    <!-- ant-contrib -->
     <taskdef resource="net/sf/antcontrib/antlib.xml">
         <classpath>
             <pathelement location="${current.dir}/tools/ant-contrib-1.0b5-SNAPSHOT.jar"/>
@@ -23,8 +19,8 @@ npm install -g ng-annotate ng-html2js
     </taskdef>
 
     <target name="all" depends="css,js,html,clean" />
-    <target name="js" depends="concat-js"/>
-    <target name="html" depends=""/>
+    <target name="js" depends="concat-js,compress-js"/>
+    <target name="html" depends="haml2html"/>
 
     <!-- sass to css -->
     <target name="css" description="编译sass">
@@ -40,6 +36,13 @@ npm install -g ng-annotate ng-html2js
         <apply executable="haml" verbose="true" failonerror="true" parallel="false">
             <!-- mapper的输入不包括fileset的dir,所以不要把views/写在dir中,这样mapper的输出就不用写views/了 -->
             <fileset dir="${webroot.dir}" includes="views/**/*.haml" />
+            <srcfile/>
+            <targetfile/>
+            <mapper type="glob" from="*.haml" to="*.html" />
+        </apply>
+        <!-- index.haml需对script标签进行替换,这里必须对index.haml进行转换 -->
+        <apply executable="haml" verbose="true" failonerror="true" parallel="false" force="true">
+            <fileset dir="${webroot.dir}" includes="views/index.haml" />
             <srcfile/>
             <targetfile/>
             <mapper type="glob" from="*.haml" to="*.html" />
@@ -86,7 +89,7 @@ npm install -g ng-annotate ng-html2js
         </loadfile>
         <!-- 要进行合并的脚本list -->
         <var name="js.concat.src" value=""/>
-        <!-- 遍历所有script标签的url和build标签,将build:和:build之间的url进行合并,并重写html的script标签 -->
+        <!-- 遍历所有script标签的url和build标签,将build:和:build之间的url进行合并 -->
         <for list="${js.concat.alllist}" param="item">
             <sequential>
                 <if>
@@ -98,7 +101,7 @@ npm install -g ng-annotate ng-html2js
                     <contains string="@{item}" substring="build:" />
                     <then>
                         <var name="js.concat.need" value="true" />
-                        <!-- 设置当前要合并的目标文件 -->
+                        <!-- 设置当前要合并的目标文件,包含"build:"字符 -->
                         <var name="js.concat.dest" value="@{item}"/>
                     </then>
                     <else>
@@ -116,15 +119,6 @@ npm install -g ng-annotate ng-html2js
                                         </concat>
                                         <!-- 输出合并目标文件 -->
                                         <echo message="${webroot.dir}/@{desturl}" />
-
-                                        <!-- 重写html的script标签 -->
-                                        <replaceregexp
-                                        match="&lt;!--[\s]*build:@{desturl} [\d\w\s\W]*&lt;script.*src=['&quot;]?(.*)['&quot;]?\s*&gt;\s*&lt;/script&gt;[\d\w\s\W]*&lt;!--[\s]*@{desturl}:build[\s]*--&gt;"
-                                        replace="&lt;script src=&quot;${webroot.dir}/@{desturl}&quot;&gt;&lt;/script&gt;"
-                                        flags="gs">
-                                            <fileset dir="${html.dir}" includes="index.html" />
-                                        </replaceregexp>
-
                                     </then>
                                 </if>
                             </sequential>
@@ -149,7 +143,38 @@ npm install -g ng-annotate ng-html2js
         </for>
     </target>
 
+    <!-- compress js -->
+    <target name="compress-js" depends="concat-js">
+        <!-- 压缩concat-js中合并的js文件,重写html的script标签 -->
+        <for list="${js.concat.destlist}" param="concatedjs">
+            <sequential>
+                <!-- 拷贝要压缩的文件 -->
+                <copy file="${webroot.dir}/@{concatedjs}" todir="${tmp.dir}/js"/>
+                <!-- 压缩文件,不更改文件名 -->
+                <java jar="${googleclosure.path}" fork="true" failonerror="true">
+                    <arg value="--warning_level"/>
+                    <arg value="quiet"/>
+                    <arg value="--angular_pass"/>
+                    <arg value="--language_in=ECMASCRIPT5"/>
+                    <arg value="--compilation_level=WHITESPACE_ONLY"/>
+                    <arg value="--formatting=SINGLE_QUOTES"/>
+                    <arg value="--js=${tmp.dir}/@{concatedjs}"/>
+                    <arg value="--js_output_file=${webroot.dir}/@{concatedjs}"/>
+                </java>
+
+                <!-- 重写index.html的script标签 -->
+                <replaceregexp
+                match="&lt;!--[\s]*build:@{concatedjs} [\d\w\s\W]*&lt;script.*src=['&quot;]?(.*)['&quot;]?\s*&gt;\s*&lt;/script&gt;[\d\w\s\W]*&lt;!--[\s]*@{concatedjs}:build[\s]*--&gt;"
+                replace="&lt;script src=&quot;/@{concatedjs}&quot;&gt;&lt;/script&gt;"
+                flags="gs">
+                    <fileset dir="${html.dir}" includes="index.html" />
+                </replaceregexp>
+            </sequential>
+        </for>
+
+    </target>
     <target name="clean">
+        <delete dir="${tmp.dir}/"/>
     </target>
 </project>
 
