@@ -11,21 +11,36 @@
     <property name="googleclosure.path" location="${current.dir}/tools/googleclosure.jar" />
     <property name="htmlcompressor.path" location="${current.dir}/tools/htmlcompressor-1.5.3.jar" />
 
-    <!-- ant-contrib -->
     <taskdef resource="net/sf/antcontrib/antlib.xml">
         <classpath>
             <pathelement location="${current.dir}/tools/ant-contrib-1.0b5-SNAPSHOT.jar"/>
         </classpath>
     </taskdef>
 
-    <target name="all" depends="css,js,html,clean" />
-    <target name="js" depends="concat-js,compress-js"/>
-    <target name="html" depends="haml2html"/>
+    <!-- 将需要处理的文件备份进行处理,处理完再执行clean任务覆盖可发布的文件 -->
+    <target name="copytmp">
+        <echo message="copy tmp..." />
+        <copy todir="${tmp.dir}/views">
+            <fileset dir="${webroot.dir}/views"/>
+        </copy>
+        <copy todir="${tmp.dir}/js">
+            <fileset dir="${webroot.dir}/js"/>
+        </copy>
+        <copy todir="${tmp.dir}/bower_components">
+            <fileset dir="${webroot.dir}/bower_components"/>
+        </copy>
+        <copy todir="${tmp.dir}/sass">
+            <fileset dir="${webroot.dir}/sass"/>
+        </copy>
+        <copy file="${webroot.dir}/config.rb" tofile="${tmp.dir}/config.rb"/>
+    </target>
 
-    <!-- sass to css -->
-    <target name="css" description="编译sass">
+    <target name="all" depends="copytmp,css,js,html,clean" />
+    <target name="js" depends="copytmp,concat-js,compress-js"/>
+    <target name="html" depends="copytmp,haml2html,compress-html"/>
+    <target name="css" depends="copytmp" description="编译sass">
         <echo message="编译sass..." />
-        <exec executable="compass" dir="${webroot.dir}">
+        <exec executable="compass" dir="${tmp.dir}">
             <arg value="compile" />
         </exec>
     </target>
@@ -35,18 +50,39 @@
         <echo message="编译haml..." />
         <apply executable="haml" verbose="true" failonerror="true" parallel="false">
             <!-- mapper的输入不包括fileset的dir,所以不要把views/写在dir中,这样mapper的输出就不用写views/了 -->
-            <fileset dir="${webroot.dir}" includes="views/**/*.haml" />
+            <fileset dir="${tmp.dir}" includes="views/**/*.haml" />
             <srcfile/>
             <targetfile/>
             <mapper type="glob" from="*.haml" to="*.html" />
         </apply>
         <!-- index.haml需对script标签进行替换,这里必须对index.haml进行转换 -->
         <apply executable="haml" verbose="true" failonerror="true" parallel="false" force="true">
-            <fileset dir="${webroot.dir}" includes="views/index.haml" />
+            <fileset dir="${tmp.dir}" includes="views/index.haml" />
             <srcfile/>
             <targetfile/>
-            <mapper type="glob" from="*.haml" to="*.html" />
+            <mapper type="glob" from="views/index.haml" to="views/index.html" />
         </apply>
+    </target>
+
+    <!-- compress html -->
+    <target name="compress-html" depends="haml2html">
+        <!-- 压缩无法覆盖本身,需拷贝一份进行压缩 -->
+        <copy todir="${html.dir}/tmp/">
+            <fileset dir="${html.dir}"/>
+        </copy>
+        <apply executable="java" verbose="true" failonerror="true" parallel="false">
+            <fileset dir="${html.dir}/tmp/" includes="**/*.html"/>
+            <arg value="-jar"/>
+            <arg value="${htmlcompressor.path}"/>
+            <arg value="--remove-intertag-spaces"/>
+            <arg value="--type"/>
+            <arg value="html"/>
+            <srcfile/>
+            <arg value="-o"/>
+            <mapper type="glob" from="*" to="${html.dir}/*" />
+            <targetfile/>
+        </apply>
+        <delete dir="${html.dir}/tmp/" />
     </target>
 
     <!-- concat javascript file according to the script tag in index.html -->
@@ -69,7 +105,7 @@
                     <replaceregex pattern=".*&lt;\!\-\-[\s]*build:([\S]+)[^&gt;]*\-\-&gt;" replace="\1build:" flags="gi" />
                     <replaceregex pattern=".*&lt;\!\-\-[\s]*([\S]+):build[^&gt;]*\-\-&gt;" replace="\1:build" flags="gi" />
                 </tokenfilter>
-                <prefixlines prefix="${webroot.dir}/"/>
+                <prefixlines prefix="${tmp.dir}/"/>
                 <suffixlines suffix="," />
                 <striplinebreaks/>
             </filterchain>
@@ -114,11 +150,11 @@
                                 <if>
                                     <contains string="${js.concat.dest}" substring="@{desturl}" />
                                     <then>
-                                        <concat destfile="${webroot.dir}/@{desturl}">
+                                        <concat destfile="${tmp.dir}/@{desturl}">
                                             <filelist files="${js.concat.src}"/>
                                         </concat>
                                         <!-- 输出合并目标文件 -->
-                                        <echo message="${webroot.dir}/@{desturl}" />
+                                        <echo message="${tmp.dir}/@{desturl}" />
                                     </then>
                                 </if>
                             </sequential>
@@ -149,8 +185,8 @@
         <for list="${js.concat.destlist}" param="concatedjs">
             <sequential>
                 <!-- 拷贝要压缩的文件 -->
-                <copy file="${webroot.dir}/@{concatedjs}" todir="${tmp.dir}/js"/>
-                <!-- 压缩文件,不更改文件名 -->
+                <copy file="${tmp.dir}/@{concatedjs}" tofile="${tmp.dir}/tmp/@{concatedjs}"/>
+                <!-- 压缩index.html抽取的文件 -->
                 <java jar="${googleclosure.path}" fork="true" failonerror="true">
                     <arg value="--warning_level"/>
                     <arg value="quiet"/>
@@ -158,8 +194,9 @@
                     <arg value="--language_in=ECMASCRIPT5"/>
                     <arg value="--compilation_level=WHITESPACE_ONLY"/>
                     <arg value="--formatting=SINGLE_QUOTES"/>
-                    <arg value="--js=${tmp.dir}/@{concatedjs}"/>
-                    <arg value="--js_output_file=${webroot.dir}/@{concatedjs}"/>
+                    <arg value="--js=${tmp.dir}/tmp/@{concatedjs}"/>
+                    <!-- js_output_file目标路径不存在会报错 -->
+                    <arg value="--js_output_file=${tmp.dir}/@{concatedjs}"/>
                 </java>
 
                 <!-- 重写index.html的script标签 -->
@@ -172,10 +209,18 @@
             </sequential>
         </for>
 
+        <!-- 删除拷贝的文件 -->
+        <delete dir="${tmp.dir}/tmp/"/>
     </target>
     <target name="clean">
+        <!-- 删除多余的html.js文件 -->
+        <delete>
+            <fileset dir="${tmp.dir}/views" includes="**/*.html.js"/>
+        </delete>
+        <copy todir="${webroot.dir}/">
+            <fileset dir="${tmp.dir}/"/>
+        </copy>
         <delete dir="${tmp.dir}/"/>
     </target>
 </project>
-
 
