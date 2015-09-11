@@ -1,13 +1,17 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 
 <project name="minify-static-file" default="all">
 
     <description>Minify Static Files</description>
     <dirname property="current.dir" file="${ant.file}" />
     <property name="webroot.dir" location="${current.dir}" />
-    <property name="html.dir" location="${webroot.dir}/views" />
-    <property name="tmp.dir" location="${current.dir}/tmp" />
-    <property name="js.dir" location="${webroot.dir}/js" />
+    <property name="dir.html" location="${webroot.dir}/views" />
+    <property name="dir.js" location="${webroot.dir}/js" />
+    <property name="tmp.dir" location="${webroot.dir}/tmp" />
+    <property name="tmp.dir.html" location="${tmp.dir}/views" />
+    <property name="tmp.dir.js" location="${tmp.dir}/js" />
+    <property name="tmp.dir.css" location="${tmp.dir}/css" />
+    <property name="html.manifest" value="KingFisher.appcache" />
     <property name="googleclosure.path" location="${current.dir}/tools/googleclosure.jar" />
     <property name="htmlcompressor.path" location="${current.dir}/tools/htmlcompressor-1.5.3.jar" />
 
@@ -17,61 +21,53 @@
         </classpath>
     </taskdef>
 
-    <!-- 将需要处理的文件备份进行处理,处理完再执行clean任务覆盖可发布的文件 -->
-    <target name="copytmp">
-        <echo message="copy tmp..." />
-        <copy todir="${tmp.dir}/views">
-            <fileset dir="${webroot.dir}/views"/>
-        </copy>
-        <copy todir="${tmp.dir}/js">
-            <fileset dir="${webroot.dir}/js"/>
-        </copy>
-        <copy todir="${tmp.dir}/bower_components">
-            <fileset dir="${webroot.dir}/bower_components"/>
-        </copy>
-        <copy todir="${tmp.dir}/sass">
-            <fileset dir="${webroot.dir}/sass"/>
-        </copy>
-        <copy file="${webroot.dir}/config.rb" tofile="${tmp.dir}/config.rb"/>
-    </target>
-
-    <target name="all" depends="copytmp,css,js,html,clean" />
-    <target name="js" depends="copytmp,concat-js,compress-js"/>
-    <target name="html" depends="copytmp,haml2html,compress-html"/>
-    <target name="css" depends="copytmp" description="编译sass">
+    <target name="all" depends="css,js,html,manifest,cover" />
+    <target name="js" depends="concat-js,compress-js"/>
+    <target name="html" depends="haml2html,compress-html,html2js"/>
+    <target name="css" description="编译sass">
         <echo message="编译sass..." />
-        <exec executable="compass" dir="${tmp.dir}">
+        <exec executable="compass" dir="${webroot.dir}" failonerror="true">
             <arg value="compile" />
+            <arg value="--output-style=compressed" />
+            <arg value="--css-dir=${tmp.dir.css}" />
         </exec>
     </target>
+
 
     <!-- haml to html -->
     <target name="haml2html">
         <echo message="编译haml..." />
+        <copy todir="${tmp.dir.html}/" failonerror="true">
+            <fileset dir="${dir.html}/">
+                <type type="dir"/>
+            </fileset>
+        </copy>
         <apply executable="haml" verbose="true" failonerror="true" parallel="false">
-            <!-- mapper的输入不包括fileset的dir,所以不要把views/写在dir中,这样mapper的输出就不用写views/了 -->
-            <fileset dir="${tmp.dir}" includes="views/**/*.haml" />
+            <!-- includes对应from -->
+            <fileset dir="${dir.html}" includes="**/*.haml" />
+            <arg value="-t"/>
+            <arg value="ugly"/>
+            <arg value="--trace"/>
             <srcfile/>
             <targetfile/>
-            <mapper type="glob" from="*.haml" to="*.html" />
+            <mapper type="glob" from="*.haml" to="${tmp.dir.html}/*.html" />
         </apply>
         <!-- index.haml需对script标签进行替换,这里必须对index.haml进行转换 -->
         <apply executable="haml" verbose="true" failonerror="true" parallel="false" force="true">
-            <fileset dir="${tmp.dir}" includes="views/index.haml" />
+            <fileset dir="${dir.html}" includes="index.haml" />
+            <arg value="-t"/>
+            <arg value="ugly"/>
+            <arg value="--trace"/>
             <srcfile/>
             <targetfile/>
-            <mapper type="glob" from="views/index.haml" to="views/index.html" />
+            <mapper type="glob" from="*.haml" to="${tmp.dir.html}/*.html" />
         </apply>
     </target>
 
     <!-- compress html -->
     <target name="compress-html" depends="haml2html">
-        <!-- 压缩无法覆盖本身,需拷贝一份进行压缩 -->
-        <copy todir="${html.dir}/tmp/">
-            <fileset dir="${html.dir}"/>
-        </copy>
         <apply executable="java" verbose="true" failonerror="true" parallel="false">
-            <fileset dir="${html.dir}/tmp/" includes="**/*.html"/>
+            <fileset dir="${tmp.dir.html}/" includes="**/*.html" excludes="index.html" />
             <arg value="-jar"/>
             <arg value="${htmlcompressor.path}"/>
             <arg value="--remove-intertag-spaces"/>
@@ -79,14 +75,28 @@
             <arg value="html"/>
             <srcfile/>
             <arg value="-o"/>
-            <mapper type="glob" from="*" to="${html.dir}/*" />
+            <mapper type="glob" from="*.html" to="${tmp.dir.html}/*.min.html" />
             <targetfile/>
         </apply>
-        <delete dir="${html.dir}/tmp/" />
     </target>
 
+    <!-- convert html to js template,anguar模板引用路径是带views的,所以includes要带views -->
+    <target name="html2js" depends="haml2html,compress-html">
+        <apply executable="ng-html2js" dir="${tmp.dir}" verbose="true" failonerror="true" parallel="false" relative="true">
+            <fileset dir="${tmp.dir}" includes="views/**/*.min.html"/>
+            <srcfile/>
+            <targetfile/>
+            <mapper type="glob" from="*.html" to="${tmp.dir}/*.html.js"/>
+            <arg value="-m"/>
+            <arg value="KingFisherTpl"/>
+            <arg value="--module-var"/>
+            <arg value="kingFisherTpl"/>
+        </apply>
+    </target>
+
+
     <!-- concat javascript file according to the script tag in index.html -->
-    <target name="concat-js" depends="haml2html">
+    <target name="concat-js" depends="haml2html,html2js">
         <!--
             html写法:
             \<!\-\- build:xxx.js \-\-\>
@@ -95,7 +105,7 @@
             \<!\-\- xxx.js:build \-\-\>
          -->
         <!-- 提取所有script标签的url,和含有build:xxx或xxx:build的注释里面的内容 -->
-        <loadfile srcFile="${html.dir}/index.html" property="js.concat.alllist">
+        <loadfile srcFile="${tmp.dir.html}/index.html" property="js.concat.alllist">
             <filterchain>
                 <linecontainsregexp>
                     <regexp pattern="(&lt;script.*src[^&gt;]*&gt;)|(&lt;\!\-\-[\s]*build:[^&gt;]*\-\-&gt;)|(&lt;\!\-\-[\s]*[\S]+:build[^&gt;]*\-\-&gt;)" />
@@ -105,13 +115,13 @@
                     <replaceregex pattern=".*&lt;\!\-\-[\s]*build:([\S]+)[^&gt;]*\-\-&gt;" replace="\1build:" flags="gi" />
                     <replaceregex pattern=".*&lt;\!\-\-[\s]*([\S]+):build[^&gt;]*\-\-&gt;" replace="\1:build" flags="gi" />
                 </tokenfilter>
-                <prefixlines prefix="${tmp.dir}/"/>
+                <prefixlines prefix="${webroot.dir}/"/>
                 <suffixlines suffix="," />
                 <striplinebreaks/>
             </filterchain>
         </loadfile>
         <!-- 提取注释build:xxx里要进行合并的javascript目标url(没法使用replace从js.concat.alllist过滤build:字符,只能再新建一个列表) -->
-        <loadfile srcFile="${html.dir}/index.html" property="js.concat.destlist">
+        <loadfile srcFile="${tmp.dir.html}/index.html" property="js.concat.destlist">
             <filterchain>
                 <linecontainsregexp>
                     <regexp pattern="&lt;\!\-\-[\s]*build:[^&gt;]*\-\-&gt;" />
@@ -177,10 +187,21 @@
                 </if>
             </sequential>
         </for>
+        <!-- concat template -->
+        <concat destfile="${tmp.dir.js}/templatejs.min.js">
+            <fileset dir="${tmp.dir.html}" includes="**/*.html.js"/>
+        </concat>
+        <echo message="${tmp.dir.js}/templatejs.min.js" />
+
+        <!-- 删除多余的html.js文件 -->
+        <delete>
+            <fileset dir="${tmp.dir.html}" includes="**/*.html.js"/>
+        </delete>
     </target>
 
     <!-- compress js -->
     <target name="compress-js" depends="concat-js">
+
         <!-- 压缩concat-js中合并的js文件,重写html的script标签 -->
         <for list="${js.concat.destlist}" param="concatedjs">
             <sequential>
@@ -204,23 +225,107 @@
                 match="&lt;!--[\s]*build:@{concatedjs} [\d\w\s\W]*&lt;script.*src=['&quot;]?(.*)['&quot;]?\s*&gt;\s*&lt;/script&gt;[\d\w\s\W]*&lt;!--[\s]*@{concatedjs}:build[\s]*--&gt;"
                 replace="&lt;script src=&quot;/@{concatedjs}&quot;&gt;&lt;/script&gt;"
                 flags="gs">
-                    <fileset dir="${html.dir}" includes="index.html" />
+                    <fileset dir="${tmp.dir.html}" includes="index.html" />
                 </replaceregexp>
             </sequential>
         </for>
 
+        <!-- 压缩js template -->
+        <copy file="${tmp.dir.js}/templatejs.min.js" tofile="${tmp.dir}/tmp/js/templatejs.min.js" failonerror="true"/>
+        <java jar="${googleclosure.path}" fork="true" failonerror="true">
+            <arg value="--warning_level"/>
+            <arg value="quiet"/>
+            <arg value="--angular_pass"/>
+            <arg value="--language_in=ECMASCRIPT5"/>
+            <arg value="--compilation_level=SIMPLE_OPTIMIZATIONS"/>
+            <arg value="--formatting=SINGLE_QUOTES"/>
+            <arg value="--js=${tmp.dir}/tmp/js/templatejs.min.js"/>
+            <arg value="--js_output_file=${tmp.dir.js}/templatejs.min.js"/>
+        </java>
+        <!-- index.html写入templatejs.min.js引用 -->
+        <replaceregexp
+        match="&lt;!--[\s]*templatejs[\s]*--&gt;"
+        replace="&lt;script src=&quot;/js/templatejs\.min\.js&quot;&gt;&lt;/script&gt;"
+        flags="gs">
+            <fileset dir="${tmp.dir.html}" includes="index.html" />
+        </replaceregexp>
+
+        <!-- index.html删除test文件 -->
+        <replaceregexp
+        match="&lt;!--[\s]*test:js [\d\w\s\W]*&lt;script.*src=['&quot;]?(.*)['&quot;]?\s*&gt;\s*&lt;/script&gt;[\d\w\s\W]*&lt;!--[\s]*endtest[\s]*--&gt;"
+        replace=""
+        flags="gs">
+            <fileset dir="${tmp.dir.html}" includes="index.html" />
+        </replaceregexp>
+
         <!-- 删除拷贝的文件 -->
         <delete dir="${tmp.dir}/tmp/"/>
     </target>
-    <target name="clean">
-        <!-- 删除多余的html.js文件 -->
-        <delete>
-            <fileset dir="${tmp.dir}/views" includes="**/*.html.js"/>
-        </delete>
-        <copy todir="${webroot.dir}/">
+
+
+    <!-- 添加manifest缓存 -->
+    <target name="manifest">
+        <!-- 获取版本号 -->
+        <exec executable="git" dir="${webroot.dir}" outputproperty="git.revision" failifexecutionfails="false" errorproperty="">
+            <arg value="rev-list" />
+            <arg value="HEAD" />
+            <arg value="-1" />
+        </exec>
+
+        <!-- 获取提交时间 -->
+        <exec executable="git" dir="${webroot.dir}" outputproperty="git.time" failifexecutionfails="false" errorproperty="">
+            <arg value="show" />
+            <arg value="-s" />
+            <arg value="--format=%ci" />
+        </exec>
+
+        <!-- 修改manifest文件的版本号信息和修改时间,如果存在版本信息和修改时间就替换,不存在就append -->
+        <copy file="${webroot.dir}/${html.manifest}" tofile="${tmp.dir}/${html.manifest}" failonerror="true"/>
+        <echo message="更新appcache文件..." />
+        <loadfile srcFile="${tmp.dir}/${html.manifest}" property="html.manifest.msg">
+            <filterchain>
+                <linecontainsregexp>
+                    <regexp pattern="\#\srevision" />
+                </linecontainsregexp>
+            </filterchain>
+        </loadfile>
+        <if>
+        <contains string="${html.manifest.msg}" substring="revision" />
+        <then>
+            <replaceregexp
+            match="(\#\srevision\:).*(\n\#\scommited\:).*"
+            replace="\1${git.revision}\2${git.time}"
+            flags="gs">
+                <fileset dir="${tmp.dir}/" includes="${html.manifest}" />
+            </replaceregexp>
+        </then>
+        <else>
+            <echo file="${tmp.dir}/${html.manifest}" append="true">
+# revision:${git.revision}
+# commited:${git.time}
+            </echo>
+        </else>
+        </if>
+
+        <!-- index.html添加manifest标识 -->
+        <echo message="添加html的manifest标识..." />
+        <replaceregexp
+        match="(&lt;\!DOCTYPE html&gt;\s*[\n]?\s*&lt;)html"
+        replace="\1html manifest='/${html.manifest}'"
+        flags="gs">
+            <fileset dir="${tmp.dir.html}" includes="index.html" />
+        </replaceregexp>
+
+    </target>
+
+    <target name="cover">
+        <copy todir="${webroot.dir}/" failonerror="true">
             <fileset dir="${tmp.dir}/"/>
         </copy>
+    </target>
+    <target name="clean">
         <delete dir="${tmp.dir}/"/>
     </target>
 </project>
+
 
