@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <project name="minify-static-file" default="all">
 
     <description>Minify Static Files</description>
@@ -22,7 +21,7 @@
     </taskdef>
 
     <target name="all" depends="css,js,html,manifest,cover" />
-    <target name="js" depends="concat-js,compress-js"/>
+    <target name="js" depends="concat-js,ng-annotate,compress-js"/>
     <target name="html" depends="haml2html,compress-html,html2js"/>
     <target name="css" description="编译sass">
         <echo message="编译sass..." />
@@ -34,7 +33,7 @@
     </target>
 
 
-    <!-- haml to html -->
+    <!-- haml to html,除了index.html,其他的后缀.src.html,因为后面要做压缩 -->
     <target name="haml2html">
         <echo message="编译haml..." />
         <copy todir="${tmp.dir.html}/" failonerror="true">
@@ -50,7 +49,7 @@
             <arg value="--trace"/>
             <srcfile/>
             <targetfile/>
-            <mapper type="glob" from="*.haml" to="${tmp.dir.html}/*.html" />
+            <mapper type="glob" from="*.haml" to="${tmp.dir.html}/*.src.html" />
         </apply>
         <!-- index.haml需对script标签进行替换,这里必须对index.haml进行转换 -->
         <apply executable="haml" verbose="true" failonerror="true" parallel="false" force="true">
@@ -64,10 +63,10 @@
         </apply>
     </target>
 
-    <!-- compress html -->
+    <!-- compress .src.html -->
     <target name="compress-html" depends="haml2html">
         <apply executable="java" verbose="true" failonerror="true" parallel="false">
-            <fileset dir="${tmp.dir.html}/" includes="**/*.html" excludes="index.html" />
+            <fileset dir="${tmp.dir.html}/" includes="**/*.src.html" excludes="index.html" />
             <arg value="-jar"/>
             <arg value="${htmlcompressor.path}"/>
             <arg value="--remove-intertag-spaces"/>
@@ -75,15 +74,19 @@
             <arg value="html"/>
             <srcfile/>
             <arg value="-o"/>
-            <mapper type="glob" from="*.html" to="${tmp.dir.html}/*.min.html" />
+            <mapper type="glob" from="*.src.html" to="${tmp.dir.html}/*.html" />
             <targetfile/>
         </apply>
+        <!-- 删除多余的.src.html文件 -->
+        <delete>
+            <fileset dir="${tmp.dir}" includes="views/**/*.src.html"/>
+        </delete>
     </target>
 
     <!-- convert html to js template,anguar模板引用路径是带views的,所以includes要带views -->
     <target name="html2js" depends="haml2html,compress-html">
         <apply executable="ng-html2js" dir="${tmp.dir}" verbose="true" failonerror="true" parallel="false" relative="true">
-            <fileset dir="${tmp.dir}" includes="views/**/*.min.html"/>
+            <fileset dir="${tmp.dir}" includes="views/**/*.html"/>
             <srcfile/>
             <targetfile/>
             <mapper type="glob" from="*.html" to="${tmp.dir}/*.html.js"/>
@@ -199,8 +202,24 @@
         </delete>
     </target>
 
+    <target name="ng-annotate" depends="concat-js">
+
+        <for list="${js.concat.destlist}" param="concatedjs">
+            <sequential>
+                <exec executable="ng-annotate">
+                    <arg value="-ar"/>
+                    <arg value="${tmp.dir}/@{concatedjs}"/>
+                    <arg value="-o"/>
+                    <arg value="${tmp.dir}/@{concatedjs}"/>
+                </exec>
+            </sequential>
+        </for>
+
+    </target>
+
+
     <!-- compress js -->
-    <target name="compress-js" depends="concat-js">
+    <target name="compress-js" depends="concat-js,ng-annotate">
 
         <!-- 压缩concat-js中合并的js文件,重写html的script标签 -->
         <for list="${js.concat.destlist}" param="concatedjs">
@@ -213,7 +232,7 @@
                     <arg value="quiet"/>
                     <arg value="--angular_pass"/>
                     <arg value="--language_in=ECMASCRIPT5"/>
-                    <arg value="--compilation_level=WHITESPACE_ONLY"/>
+                    <arg value="--compilation_level=SIMPLE_OPTIMIZATIONS"/>
                     <arg value="--formatting=SINGLE_QUOTES"/>
                     <arg value="--js=${tmp.dir}/tmp/@{concatedjs}"/>
                     <!-- js_output_file目标路径不存在会报错 -->
@@ -264,7 +283,22 @@
 
 
     <!-- 添加manifest缓存 -->
-    <target name="manifest">
+    <target name="cachefile">
+        <echo file="${tmp.dir}/${html.manifest}" append="false">CACHE MANIFEST
+/js/lib.min.js
+/js/myapp.min.js
+/js/templatejs.min.js
+/css/style.css
+/img/ui/bird.png
+/img/ui/logo.jpg
+/fonts/icon.woff
+/fonts/opensans_regular.woff
+
+NETWORK:
+*
+        </echo>
+    </target>
+    <target name="manifest" depends="cachefile">
         <!-- 获取版本号 -->
         <exec executable="git" dir="${webroot.dir}" outputproperty="git.revision" failifexecutionfails="false" errorproperty="">
             <arg value="rev-list" />
@@ -280,7 +314,6 @@
         </exec>
 
         <!-- 修改manifest文件的版本号信息和修改时间,如果存在版本信息和修改时间就替换,不存在就append -->
-        <copy file="${webroot.dir}/${html.manifest}" tofile="${tmp.dir}/${html.manifest}" failonerror="true"/>
         <echo message="更新appcache文件..." />
         <loadfile srcFile="${tmp.dir}/${html.manifest}" property="html.manifest.msg">
             <filterchain>
@@ -319,13 +352,28 @@
     </target>
 
     <target name="cover">
-        <copy todir="${webroot.dir}/" failonerror="true">
+        <copy todir="${webroot.dir}/" failonerror="true" overwrite="true">
             <fileset dir="${tmp.dir}/"/>
         </copy>
     </target>
     <target name="clean">
         <delete dir="${tmp.dir}/"/>
     </target>
+
+
+    <target name="dev">
+        <apply executable="haml" verbose="true" failonerror="true" parallel="false">
+            <!-- includes对应from -->
+            <fileset dir="${dir.html}" includes="**/*.haml" />
+            <arg value="-t"/>
+            <arg value="ugly"/>
+            <arg value="--trace"/>
+            <srcfile/>
+            <targetfile/>
+            <mapper type="glob" from="*.haml" to="${dir.html}/*.html" />
+        </apply>
+        <exec executable="compass" dir="${webroot.dir}" failonerror="true">
+            <arg value="compile" />
+        </exec>
+    </target>
 </project>
-
-
