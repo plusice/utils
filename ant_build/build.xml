@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
 <project name="minify-static-file" default="all">
 
     <description>Minify Static Files</description>
@@ -21,7 +22,7 @@
     </taskdef>
 
     <target name="all" depends="css,js,html,manifest,cover" />
-    <target name="js" depends="concat-js,ng-annotate,compress-js"/>
+    <target name="js" depends="patch,concat-js,ng-annotate,compress-js"/>
     <target name="html" depends="haml2html,compress-html,html2js"/>
     <target name="css" description="编译sass">
         <echo message="编译sass..." />
@@ -32,6 +33,12 @@
         </exec>
     </target>
 
+
+    <!-- angular补丁,对angular源码进行修改 -->
+    <target name="patch">
+        <patch patchfile="js/patch/angular.patch" strip="1"/>
+        <patch patchfile="js/patch/ui-bootstrap-tpl.patch" strip="1"/>
+    </target>
 
     <!-- haml to html,除了index.html,其他的后缀.src.html,因为后面要做压缩 -->
     <target name="haml2html">
@@ -202,42 +209,75 @@
         </delete>
     </target>
 
-    <target name="ng-annotate" depends="concat-js">
 
+    <!-- ng-annotate 压缩预处理，第一个合并的脚本不进行处理  -->
+    <target name="ng-annotate" depends="concat-js">
+        <var name="annotate_index" value="1"/>
         <for list="${js.concat.destlist}" param="concatedjs">
             <sequential>
-                <exec executable="ng-annotate">
-                    <arg value="-ar"/>
-                    <arg value="${tmp.dir}/@{concatedjs}"/>
-                    <arg value="-o"/>
-                    <arg value="${tmp.dir}/@{concatedjs}"/>
-                </exec>
+                <if>
+                    <equals arg1="${annotate_index}" arg2="1" />
+                    <then>
+                    </then>
+                    <else>
+                        <exec executable="ng-annotate">
+                            <arg value="-ar"/>
+                            <arg value="${tmp.dir}/@{concatedjs}"/>
+                            <arg value="-o"/>
+                            <arg value="${tmp.dir}/@{concatedjs}"/>
+                        </exec>
+                    </else>
+                </if>
+                <math result="annotate_index" operand1="${annotate_index}" operation="+" operand2="1" datatype="int" />
             </sequential>
         </for>
 
     </target>
 
 
-    <!-- compress js -->
+    <!-- compress js，第一个合并的脚本(库)只进行whitespace压缩,使用ng-animation用过高压缩会出问题 -->
     <target name="compress-js" depends="concat-js,ng-annotate">
 
+        <var name="concat_index" value="1"/>
         <!-- 压缩concat-js中合并的js文件,重写html的script标签 -->
         <for list="${js.concat.destlist}" param="concatedjs">
+
             <sequential>
                 <!-- 拷贝要压缩的文件 -->
                 <copy file="${tmp.dir}/@{concatedjs}" tofile="${tmp.dir}/tmp/@{concatedjs}"/>
-                <!-- 压缩index.html抽取的文件 -->
-                <java jar="${googleclosure.path}" fork="true" failonerror="true">
-                    <arg value="--warning_level"/>
-                    <arg value="quiet"/>
-                    <arg value="--angular_pass"/>
-                    <arg value="--language_in=ECMASCRIPT5"/>
-                    <arg value="--compilation_level=SIMPLE_OPTIMIZATIONS"/>
-                    <arg value="--formatting=SINGLE_QUOTES"/>
-                    <arg value="--js=${tmp.dir}/tmp/@{concatedjs}"/>
-                    <!-- js_output_file目标路径不存在会报错 -->
-                    <arg value="--js_output_file=${tmp.dir}/@{concatedjs}"/>
-                </java>
+                <if>
+                    <equals arg1="${concat_index}" arg2="1" />
+                    <then>
+                        <echo message="@{concatedjs}" />
+                        <!-- 压缩index.html抽取的文件 -->
+                        <java jar="${googleclosure.path}" fork="true" failonerror="true">
+                            <arg value="--warning_level"/>
+                            <arg value="quiet"/>
+                            <arg value="--angular_pass"/>
+                            <arg value="--language_in=ECMASCRIPT5"/>
+                            <arg value="--compilation_level=WHITESPACE_ONLY"/>
+                            <arg value="--formatting=SINGLE_QUOTES"/>
+                            <arg value="--js=${tmp.dir}/tmp/@{concatedjs}"/>
+                            <!-- js_output_file目标路径不存在会报错 -->
+                            <arg value="--js_output_file=${tmp.dir}/@{concatedjs}"/>
+                        </java>
+                    </then>
+                    <else>
+                        <echo message="@{concatedjs}" />
+                        <!-- 压缩index.html抽取的文件 -->
+                        <java jar="${googleclosure.path}" fork="true" failonerror="true">
+                            <arg value="--warning_level"/>
+                            <arg value="quiet"/>
+                            <arg value="--angular_pass"/>
+                            <arg value="--language_in=ECMASCRIPT5"/>
+                            <arg value="--compilation_level=SIMPLE_OPTIMIZATIONS"/>
+                            <arg value="--formatting=SINGLE_QUOTES"/>
+                            <arg value="--js=${tmp.dir}/tmp/@{concatedjs}"/>
+                            <!-- js_output_file目标路径不存在会报错 -->
+                            <arg value="--js_output_file=${tmp.dir}/@{concatedjs}"/>
+                        </java>
+                    </else>
+                </if>
 
                 <!-- 重写index.html的script标签 -->
                 <replaceregexp
@@ -246,6 +286,8 @@
                 flags="gs">
                     <fileset dir="${tmp.dir.html}" includes="index.html" />
                 </replaceregexp>
+
+                <math result="concat_index" operand1="${concat_index}" operation="+" operand2="1" datatype="int" />
             </sequential>
         </for>
 
@@ -351,6 +393,7 @@ NETWORK:
 
     </target>
 
+    <!-- temp覆盖webroot,清除temp -->
     <target name="cover">
         <copy todir="${webroot.dir}/" failonerror="true" overwrite="true">
             <fileset dir="${tmp.dir}/"/>
@@ -361,7 +404,7 @@ NETWORK:
     </target>
 
 
-    <target name="dev">
+    <target name="dev" depends="patch">
         <apply executable="haml" verbose="true" failonerror="true" parallel="false">
             <!-- includes对应from -->
             <fileset dir="${dir.html}" includes="**/*.haml" />
@@ -375,5 +418,6 @@ NETWORK:
         <exec executable="compass" dir="${webroot.dir}" failonerror="true">
             <arg value="compile" />
         </exec>
+
     </target>
 </project>
