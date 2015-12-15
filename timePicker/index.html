@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>date time picker</title>
+    <style type="text/css">
+
+        .weekTime-table {
+          width: 98%;
+          margin-left: 13px;
+          font-size: 12px;
+        }
+        .weekTime-table th, .weekTime-table td {
+          border: solid 1px #ddd;
+          line-height: 26px;
+          font-weight: normal;
+        }
+        .weekTime-table .col-times {
+          background-color: #f8f8f8;
+        }
+        .weekTime-table .col-day {
+          width: 10%;
+        }
+        .weekTime-table .col-time {
+          width: 3.7%;
+        }
+        .weekTime-table .td-time {
+          cursor: pointer;
+        }
+        .weekTime-table .row-mon .td-time.tempactive,
+        .weekTime-table .row-mon .td-time.active {
+          background-color: #f7c4d0;
+        }
+        .weekTime-table .row-tue .td-time.tempactive,
+        .weekTime-table .row-tue .td-time.active {
+          background-color: #ffd27f;
+        }
+        .weekTime-table .row-wed .td-time.tempactive,
+        .weekTime-table .row-wed .td-time.active {
+          background-color: #fae885;
+        }
+        .weekTime-table .row-thu .td-time.tempactive,
+        .weekTime-table .row-thu .td-time.active {
+          background-color: #90d79f;
+        }
+        .weekTime-table .row-fri .td-time.tempactive,
+        .weekTime-table .row-fri .td-time.active {
+          background-color: #a2c4e6;
+        }
+        .weekTime-table .row-sat .td-time.tempactive,
+        .weekTime-table .row-sat .td-time.active {
+          background-color: #87d8d0;
+        }
+        .weekTime-table .row-sun .td-time.tempactive,
+        .weekTime-table .row-sun .td-time.active {
+          background-color: #c1bfed;
+        }
+        .weekTime-table .row-day .active.tempactive {
+          background: none;
+        }
+
+    </style>
+</head>
+<body>
+
+
+    <div id="tableWpr" class="weekTime-table"></div>
+
+    <script type="text/javascript" src="./jquery-1.9.1.js"></script>
+    <script type="text/javascript" src="./picker.js"></script>
+    <script type="text/javascript">
+
+        // 选择的时间，一个二位数组，第一维是天，第二维是时间，表示0~23点
+        var selected = [
+                [10,12,13]
+            ];
+
+        // days 是要显示的日期，classname是日期那一个<tr>的类名
+        var customWeekTime = new WeekTime({
+            el: '#tableWpr',
+            data: {
+                days: [
+                    {
+                        text: '星期一',
+                        className: 'row-mon'
+                    },{
+                        text: '星期二',
+                        className: 'row-tue'
+                    },{
+                        text: '星期三',
+                        className: 'row-wed'
+                    },{
+                        text: '星期四',
+                        className: 'row-thu'
+                    },{
+                        text: '星期五',
+                        className: 'row-fri'
+                    },{
+                        text: '星期六',
+                        className: 'row-sat'
+                    },{
+                        text: '星期日',
+                        className: 'row-sun'
+                    }
+                ],
+                // @模拟数据
+                selected: selected
+            }
+        });
+
+        // 可以监听时间更新做出操作
+        customWeekTime.$el.on('updatetime' ,function () {
+            console.log(customWeekTime.data.selected);
+        });
+
+    </script>
+</body>
+</html>
