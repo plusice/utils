@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>pageshot</title>
+</head>
+<body>
+	<a href="javascript:;" id="testbtn">test</a>
+	<br/>
+	<br/>
+	<div style="height: 200px;background: #0ff;"></div>
+	<div style="height: 200px;background: #ff0;"></div>
+	<div style="height: 200px;background: #0f0;"></div>
+	<div style="height: 200px;background: #0ff;"></div>
+	<div style="height: 200px;background: #ff0;"></div>
+	<div style="height: 200px;background: #0f0;"></div>
+	<script type="text/javascript" src="node_modules/html2canvas/dist/html2canvas.js"></script>
+	<script type="text/javascript" src="index.js"></script>
+	<script type="text/javascript">
+		document.getElementById('testbtn').addEventListener('click', function() {
+			pageShot(function(base64) {
+				window.open(base64);
+			});
+		});
+	</script>
+</body>
+</html>
