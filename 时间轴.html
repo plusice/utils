@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>timeline</title>
+    <style>
+        div {
+            box-sizing: border-box;
+        }
+        .u-timeline .u-timeline-item {
+                position: relative;
+            }
+            .u-timeline .u-timeline-item:before,
+            .u-timeline .u-timeline-item:after {
+                display: table;
+                content: "";
+            }
+            .u-timeline .u-timeline-item:after {
+                clear: both
+            }
+            .u-timeline .timeline-text {
+                padding: 24px;
+                background-color: #ccc;
+            }
+            .u-timeline .timeline-line-box {
+                float: left;
+                width: 46px;
+                min-height: 10px;
+            }
+            .u-timeline .timeline-line {
+                position: absolute;
+                width: 2px;
+                background-color: #ccc;
+                top: 0;
+                bottom: 0;
+                left: 166px;
+            }
+            .u-timeline .timeline-point {
+                position: absolute;
+                width: 14px;
+                height: 14px;
+                background-color: #00ccff;
+                top: 50%;
+                left: 160px;
+                margin-top: -7px;
+                border-radius: 7px;
+            }
+            .u-timeline .timeline-point-big {
+                width: 54px;
+                height: 54px;
+                background-color: #00ccff;
+                border-radius: 27px;
+                border: solid 6px #dcf3ff;
+                color: #fff;
+                text-align: center;
+                line-height: 42px;
+            }
+            .u-timeline .timeline-text-box {
+                float: left;
+                padding: 0.5%;
+                padding-left: 186px;
+                margin-left: -186px;
+                width: 100%;
+            }
+            .u-timeline .timeline-time-box {
+                float: left;
+                width: 140px;
+                height: 10px;
+                font-size: 0;
+            }
+            .u-timeline .timeline-time {
+                position: absolute;
+                top: 50%;
+                margin-top: -7px;
+                font-size: 14px;
+                line-height: 14px;
+            }
+    </style>
+</head>
+<body>
+    <div class="u-timeline">
+        <div class="u-timeline-item">
+            <div class="timeline-time-box">
+                <span class="timeline-time">2019-20-01 10:10</span>
+            </div>
+            <div class="timeline-line-box">
+                <div class="timeline-point-big">Start</div>
+            </div>
+        </div>
+        <div class="u-timeline-item" v-for="step in list">
+            <div class="timeline-time-box">
+                <span class="timeline-time">2019-20-01 10:10</span>
+            </div>
+            <div class="timeline-line-box">
+                <div class="timeline-line"></div>
+                <div class="timeline-point"></div>
+            </div>
+            <div class="timeline-text-box">
+                <div class="timeline-text">
+                    test<br>
+                    test
+                </div>
+            </div>
+        </div>
+        <div class="u-timeline-item">
+            <div class="timeline-time-box">
+                <span class="timeline-time">2019-20-01 10:10</span>
+            </div>
+            <div class="timeline-line-box">
+                <div class="timeline-point-big">End</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
